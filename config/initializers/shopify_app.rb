@@ -1,14 +1,14 @@
 ShopifyApp.configure do |config|
   config.application_name = "My Shopify App"
   config.old_secret = ""
-  config.scope = "read_products" # Consult this page for more scope options:
+  #config.scope = "read_products" # Consult this page for more scope options:
                                   # https://help.shopify.com/en/api/getting-started/authentication/oauth/scopes
   config.embedded_app = true
   config.after_authenticate_job = false
   config.api_version = "2022-07"
   config.shop_session_repository = 'Shop'
 
-  config.reauth_on_access_scope_changes = true
+  config.reauth_on_access_scope_changes = false
 
   config.api_key = ENV.fetch('SHOPIFY_API_KEY', '').presence
   config.secret = ENV.fetch('SHOPIFY_API_SECRET', '').presence
@@ -32,14 +32,39 @@ ShopifyApp.configure do |config|
   end
 end
 
+#module ShopifyAPIExtensions
+#  module Context
+#    def set_scope_thread_safe(scope)
+#      @scope_thread_safe ||= Concurrent::ThreadLocalVar.new { nil }
+#      @scope_thread_safe.value = ShopifyAPI::Auth::AuthScopes.new(scope) 
+#    end
+#
+#    def scope_thread_safe
+#      @scope_thread_safe.value
+#    end
+#  end
+#end
+#
+#module ShopifyAPIExtensions
+#  module ContextB
+#    def scope
+#      @scope_thread_safe.value
+#    end
+#  end
+#end
+
 Rails.application.config.after_initialize do
   if ShopifyApp.configuration.api_key.present? && ShopifyApp.configuration.secret.present?
+    #ShopifyAPI::Context.extend(ShopifyAPIExtensions::Context)
+    #ShopifyAPI::Context.include(ShopifyAPIExtensions::ContextB)
+
     ShopifyAPI::Context.setup(
       api_key: ShopifyApp.configuration.api_key,
       api_secret_key: ShopifyApp.configuration.secret,
       api_version: ShopifyApp.configuration.api_version,
       host_name: URI(ENV.fetch('HOST', '')).host || '',
-      scope: ShopifyApp.configuration.scope,
+      #scope: ShopifyApp.configuration.scope,
+      scope: [],
       is_private: !ENV.fetch('SHOPIFY_APP_PRIVATE_SHOP', '').empty?,
       is_embedded: ShopifyApp.configuration.embedded_app,
       session_storage: ShopifyApp::SessionRepository,
@@ -51,3 +76,55 @@ Rails.application.config.after_initialize do
     ShopifyApp::WebhooksManager.add_registrations
   end
 end
+
+module ShopifyAPI
+  class Context
+    class << self
+      def scope_thread_safe=(scope)
+        @scope_thread_safe ||= Concurrent::ThreadLocalVar.new
+        @scope_thread_safe.value = ShopifyAPI::Auth::AuthScopes.new(scope)
+      end
+
+      def scope
+        @scope_thread_safe.value
+      end
+    end
+  end
+end
+
+module ShopifyApp
+  class SessionRepository
+    class << self
+      def shop_storage_thread_safe=(klass)
+        @shop_storage_thread_safe ||= Concurrent::ThreadLocalVar.new
+        @shop_storage_thread_safe.value = klass
+      end
+
+      def load_shop_storage
+        return unless @shop_storage_thread_safe.value
+        @shop_storage_thread_safe.value.respond_to?(:safe_constantize) ? @shop_storage_thread_safe.value.safe_constantize : @shop_storage_thread_safe.value
+      end
+    end
+  end
+end
+
+class ScopesMiddleware
+  def initialize(app)
+    @app = app
+  end
+
+  def call(env)
+    case env["HTTP_HOST"]
+    when 'changes-installed-viewing-marshall.trycloudflare.com'
+      ShopifyAPI::Context.scope_thread_safe = 'write_products'
+      ShopifyApp::SessionRepository.shop_storage_thread_safe = 'ShopX'
+    when 'seventh-drum-giant-alternatively.trycloudflare.com'
+      ShopifyAPI::Context.scope_thread_safe = 'read_products'
+      ShopifyApp::SessionRepository.shop_storage_thread_safe = 'ShopY'
+    end
+
+    @app.call(env)
+  end
+end
+
+Rails.application.config.middleware.unshift(ScopesMiddleware)
