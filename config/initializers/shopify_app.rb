@@ -1,8 +1,6 @@
 ShopifyApp.configure do |config|
   config.application_name = "My Shopify App"
   config.old_secret = ""
-  #config.scope = "read_products" # Consult this page for more scope options:
-                                  # https://help.shopify.com/en/api/getting-started/authentication/oauth/scopes
   config.embedded_app = true
   config.after_authenticate_job = false
   config.api_version = "2022-07"
@@ -32,38 +30,13 @@ ShopifyApp.configure do |config|
   end
 end
 
-#module ShopifyAPIExtensions
-#  module Context
-#    def set_scope_thread_safe(scope)
-#      @scope_thread_safe ||= Concurrent::ThreadLocalVar.new { nil }
-#      @scope_thread_safe.value = ShopifyAPI::Auth::AuthScopes.new(scope) 
-#    end
-#
-#    def scope_thread_safe
-#      @scope_thread_safe.value
-#    end
-#  end
-#end
-#
-#module ShopifyAPIExtensions
-#  module ContextB
-#    def scope
-#      @scope_thread_safe.value
-#    end
-#  end
-#end
-
 Rails.application.config.after_initialize do
   if ShopifyApp.configuration.api_key.present? && ShopifyApp.configuration.secret.present?
-    #ShopifyAPI::Context.extend(ShopifyAPIExtensions::Context)
-    #ShopifyAPI::Context.include(ShopifyAPIExtensions::ContextB)
-
     ShopifyAPI::Context.setup(
       api_key: ShopifyApp.configuration.api_key,
       api_secret_key: ShopifyApp.configuration.secret,
       api_version: ShopifyApp.configuration.api_version,
       host_name: URI(ENV.fetch('HOST', '')).host || '',
-      #scope: ShopifyApp.configuration.scope,
       scope: [],
       is_private: !ENV.fetch('SHOPIFY_APP_PRIVATE_SHOP', '').empty?,
       is_embedded: ShopifyApp.configuration.embedded_app,
