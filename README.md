@@ -16,5 +16,6 @@ cloudflared tunnel --url http://localhost:3000
 ```
 5. Set the cloudflared host in `.env`:
 ```sh
-HOST=http://localhost:3000
+HOST=https://random-words.trycloudflare.com
 ```
+6. Set the cloudflared host as app URL and redirect URL in partners dashboard. redirect URL should end with /auth/shopify/callback
